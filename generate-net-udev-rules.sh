@@ -8,6 +8,7 @@ SHOW_PCI=false
 SHOW_RULES=true
 SCRIPT_NAME="${0##*/}"
 
+# Печатает справку по использованию скрипта.
 usage() {
     cat <<EOF
 Usage: $SCRIPT_NAME [--dry-run] [--apply] [--rules-file PATH] [-p|--show-pci] [--no-rules] [-h|--help]
@@ -64,10 +65,12 @@ while (($#)); do
     shift
 done
 
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Находит физические сетевые PCI-интерфейсы.
 get_interfaces() {
     local iface_path iface
 
@@ -86,6 +89,7 @@ get_interfaces() {
     done
 }
 
+# PCI-адрес (домен:шина:устройство.функция) → числовой ключ для сортировки (невалидный уходит в конец).
 pci_sort_key() {
     local pci="$1"
 
@@ -100,6 +104,7 @@ pci_sort_key() {
     fi
 }
 
+# Группировка портов одной физической карты для схемы cN в build_plan
 pci_bus_key() {
     local pci="$1"
 
@@ -110,6 +115,7 @@ pci_bus_key() {
     fi
 }
 
+# Делает короткое описание PCI-адреса для таблицы.
 pci_short() {
     local pci="$1"
 
@@ -120,6 +126,7 @@ pci_short() {
     fi
 }
 
+# Собирает сведения об интерфейсах для построения плана.
 collect_records() {
     local iface sysfs_path pci mac udev_info onboard sort_key bus_key driver
 
@@ -154,6 +161,7 @@ collect_records() {
     done < <(get_interfaces)
 }
 
+# Рассчитывает новые имена интерфейсов по PCI-порядку.
 build_plan() {
     local records=()
     local record sort_key onboard bus_key iface pci mac driver
@@ -211,6 +219,7 @@ build_plan() {
     done
 }
 
+# Проверяет, не заняты ли целевые имена чужими интерфейсами.
 check_name_conflicts() {
     local row iface target pci mac onboard driver short existing_iface
     local -A managed_ifaces=()
@@ -232,6 +241,7 @@ check_name_conflicts() {
     done
 }
 
+# Генерирует текст udev-правил для переименования.
 generate_rules() {
     local row iface target pci mac onboard driver short
 
@@ -255,6 +265,7 @@ EOF
     done
 }
 
+# Приводит путь правил к конкретному файлу, если указан каталог.
 normalize_rules_file_path() {
     local rules_dir
 
@@ -265,6 +276,7 @@ normalize_rules_file_path() {
     fi
 }
 
+# Выводит таблицу текущих и целевых имён интерфейсов.
 print_table() {
     local row iface target pci mac onboard driver short
 
@@ -286,6 +298,7 @@ print_table() {
     done
 }
 
+# Записывает правила на диск и перезагружает udev.
 apply_rules() {
     local rules_content="$1"
     local rules_dir tmp_file backup_file timestamp
@@ -318,13 +331,16 @@ apply_rules() {
     echo "Для применения имён безопаснее перезагрузить систему."
 }
 
+# Выполняет основной сценарий: план, вывод и применение правил.
 main() {
     local plan=()
     local rules_content
     local plan_file
 
+    # Если передан каталог, преобразуем его в путь к файлу правил.
     normalize_rules_file_path
 
+    # Временный файл нужен, чтобы безопасно прочитать многострочный вывод build_plan в массив.
     plan_file=$(mktemp)
     if ! build_plan >"$plan_file"; then
         rm -f "$plan_file"
@@ -334,14 +350,18 @@ main() {
     mapfile -t plan <"$plan_file"
     rm -f "$plan_file"
 
+    # Пустой план означает, что правила создавать не для чего.
     if ((${#plan[@]} == 0)); then
         echo "ERROR: план переименования пуст; правила не сформированы" >&2
         exit 1
     fi
 
+    # Перед выводом правил убеждаемся, что новые имена никого не перезапишут.
     check_name_conflicts "${plan[@]}"
 
     print_table "${plan[@]}"
+
+    # Генерируем правила один раз, чтобы одинаковый текст показать и при необходимости записать.
     rules_content=$(generate_rules "${plan[@]}")
 
     if [[ "$SHOW_RULES" == "true" ]]; then
@@ -349,6 +369,7 @@ main() {
         printf '%s\n' "$rules_content"
     fi
 
+    # В dry-run только показываем результат, а в apply записываем правила в систему.
     if [[ "$MODE" == "apply" ]]; then
         apply_rules "$rules_content"
     else
