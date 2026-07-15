@@ -147,10 +147,12 @@ collect_records() {
             udev_info=$(udevadm info -q all -p "/sys/class/net/$iface" 2>/dev/null || true)
         fi
 
-        if grep -q 'ID_NET_NAME_ONBOARD=' <<<"$udev_info"; then
+        onboard=0
+        # PCI-шина 00 — это материнская плата, считаем onboard
+        if [[ "$pci" =~ ^([0-9A-Fa-f]{4}):00:[0-9A-Fa-f]{2}\.[0-7]$ ]]; then
             onboard=1
-        else
-            onboard=0
+        elif grep -q 'ID_NET_NAME_ONBOARD=' <<<"$udev_info"; then
+            onboard=1
         fi
 
         sort_key=$(pci_sort_key "$pci")
